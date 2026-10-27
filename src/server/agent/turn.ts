@@ -122,7 +122,7 @@ export async function runTurn(deps: TurnDeps, input: TurnInput): Promise<Message
     recorder.handoff = {
       level: 'N1',
       reason: MOTIVOS.sem_seguranca,
-      summary: `O agent não teve segurança para decidir (confiança ${Math.round(decision.confidence * 100)}%). Entendimento: ${decision.intent}. Motivo: ${decision.rationale}`,
+      summary: `O agent não teve segurança para decidir (confiança ${Math.round(decision.confidence * 100)}%). Entendimento: ${decision.intent.replace(/\.$/, '')}. Motivo: ${decision.rationale}`,
       ticketId: fresh.focusTicketId,
       lowConfidence: decision.confidence,
     };

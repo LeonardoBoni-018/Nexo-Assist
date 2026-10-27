@@ -6,12 +6,27 @@
   "engines": {
     "node": ">=22.13.0"
   },
-  "scripts": {},
+  "scripts": {
+    "dev": "concurrently -k -n tickets,app -c magenta,cyan \"npm:dev:tickets\" \"npm:dev:app\"",
+    "dev:app": "next dev",
+    "dev:tickets": "tsx watch --env-file-if-exists=.env services/tickets/src/server.ts",
+    "build": "next build",
+    "start": "concurrently -k -n tickets,app -c magenta,cyan \"npm:start:tickets\" \"npm:start:app\"",
+    "start:app": "next start",
+    "start:tickets": "tsx --env-file-if-exists=.env services/tickets/src/server.ts",
+    "setup": "node -e \"require('fs').existsSync('.env')||require('fs').copyFileSync('.env.example','.env')\"",
+    "reset-data": "node -e \"for (const f of require('fs').readdirSync('data')) if (f.endsWith('.db')||f.includes('.db-')) require('fs').rmSync('data/'+f)\"",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "seed:demo": "tsx --env-file-if-exists=.env scripts/seed-demo.ts"
+  },
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0.89",
     "@hono/node-server": "^2.1.5",
     "@mastra/core": "^1.79.0",
     "hono": "^4.13.14",
+    "lucide-react": "^1.62.0",
     "next": "^16.4.3",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",

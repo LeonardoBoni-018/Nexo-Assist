@@ -61,6 +61,13 @@ export class TurnRecorder {
       Object.assign(step, { status: 'error', output: message, durationMs: Date.now() - started });
       return { erro: message };
     } finally {
+      // A etapa "conclui" as sub-etapas registradas durante ela (ex.: montou o
+      // rascunho depois de verificar duplicidade e classificar a prioridade).
+      const idx = this.steps.indexOf(step);
+      if (idx >= 0 && idx < this.steps.length - 1) {
+        this.steps.splice(idx, 1);
+        this.steps.push(step);
+      }
       this.emit({ type: 'step', step: { ...step } });
     }
   }

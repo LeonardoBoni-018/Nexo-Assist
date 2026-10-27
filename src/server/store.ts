@@ -207,15 +207,16 @@ export class AppStore {
     this.db
       .prepare('INSERT INTO messages (id, conversation_id, role, author_name, content, ui, trace, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
       .run(id, conversationId, m.role, m.authorName, m.content, JSON.stringify(m.ui ?? []), m.trace ? JSON.stringify(m.trace) : null, at);
-    const preview = m.role === 'assistant' ? `Nexo: ${m.content}` : m.content;
+    // Mensagens de sistema não viram prévia na lista do console.
+    const preview = m.role === 'system' ? null : m.role === 'assistant' ? `Nexo: ${m.content}` : m.content;
     this.db
       .prepare(
-        `UPDATE conversations SET updated_at = ?, last_preview = ?,
+        `UPDATE conversations SET updated_at = ?, last_preview = COALESCE(?, last_preview),
            user_message_count = user_message_count + ?,
            unread_for_analyst = unread_for_analyst + ?
          WHERE id = ?`,
       )
-      .run(at, preview.slice(0, 140), m.role === 'user' ? 1 : 0, m.role === 'user' && this.getConversation(conversationId)?.status !== 'agent' ? 1 : 0, conversationId);
+      .run(at, preview?.slice(0, 140) ?? null, m.role === 'user' ? 1 : 0, m.role === 'user' && this.getConversation(conversationId)?.status !== 'agent' ? 1 : 0, conversationId);
     return { id, role: m.role, authorName: m.authorName, content: m.content, ui: m.ui ?? [], trace: m.trace ?? null, createdAt: at };
   }
 
