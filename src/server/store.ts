@@ -189,9 +189,11 @@ export class AppStore {
     if (patch.unreadForAnalyst !== undefined) cols.unread_for_analyst = patch.unreadForAnalyst;
     const keys = Object.keys(cols);
     if (keys.length === 0) return;
+    // Marcar como lida não deve reordenar a lista do console.
+    const touch = keys.some((k) => k !== 'unread_for_analyst');
     this.db
-      .prepare(`UPDATE conversations SET ${keys.map((k) => `${k} = ?`).join(', ')}, updated_at = ? WHERE id = ?`)
-      .run(...(Object.values(cols) as Array<string | number | null>), new Date().toISOString(), id);
+      .prepare(`UPDATE conversations SET ${keys.map((k) => `${k} = ?`).join(', ')}${touch ? ', updated_at = ?' : ''} WHERE id = ?`)
+      .run(...(Object.values(cols) as Array<string | number | null>), ...(touch ? [new Date().toISOString()] : []), id);
   }
 
   // ---------- mensagens ----------

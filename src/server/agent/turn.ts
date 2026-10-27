@@ -1,4 +1,5 @@
 import { Agent } from '@mastra/core/agent';
+import type { LanguageModelV4 } from '@ai-sdk/provider';
 import type { MessageView, StreamEvent, TurnTrace } from '@/shared/chat';
 import type { Person } from '../../../seed/people';
 import { applyHandoff, historyForModel } from '../conversation';
@@ -13,7 +14,8 @@ type AgentModel = ConstructorParameters<typeof Agent>[0]['model'];
 
 export interface TurnDeps {
   store: AppStore;
-  model: AgentModel;
+  /** Modelo do AI SDK (Anthropic em produção; roteirizado nos testes). */
+  model: LanguageModelV4;
   modelName: string;
   providerOptions?: Record<string, Record<string, unknown>>;
   tickets: (onCall: (info: CallInfo) => void) => TicketsClient;
@@ -52,7 +54,8 @@ export async function runTurn(deps: TurnDeps, input: TurnInput): Promise<Message
     id: 'nexo-assist',
     name: 'Nexo Assist',
     instructions: INSTRUCTIONS,
-    model: deps.model,
+    // O Mastra embute uma cópia própria dos tipos do AI SDK; em runtime o contrato (v4) é o mesmo.
+    model: deps.model as unknown as AgentModel,
     tools,
   });
 
