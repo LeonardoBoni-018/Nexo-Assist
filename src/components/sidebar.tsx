@@ -1,17 +1,22 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { LogOut, MessageSquare, User } from 'lucide-react';
 import { Avatar, NexoMark } from './brand';
 
-export async function logout() {
-  await fetch('/api/auth/logout', { method: 'POST' });
-  window.location.assign('/login');
+export function useLogout() {
+  const router = useRouter();
+  return async () => {
+    await fetch('/api/auth/logout', { method: 'POST' });
+    router.replace('/login');
+    router.refresh();
+  };
 }
 
 export function Sidebar({ name, email }: { name: string; email: string }) {
   const path = usePathname();
+  const logout = useLogout();
   const items = [
     { href: '/chat', label: 'Atendimento', icon: MessageSquare },
     { href: '/perfil', label: 'Meu perfil', icon: User },

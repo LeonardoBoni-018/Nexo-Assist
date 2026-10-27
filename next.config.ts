@@ -5,6 +5,7 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ['@mastra/core'],
   poweredByHeader: false,
   agentRules: false,
+  devIndicators: false,
 };
 
 export default nextConfig;

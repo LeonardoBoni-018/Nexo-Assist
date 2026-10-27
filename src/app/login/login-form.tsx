@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { ArrowRight, Check, Eye, EyeOff, Lock, Mail, LoaderCircle } from 'lucide-react';
 
 const DEMO_USERS = [
@@ -17,6 +18,7 @@ export function LoginForm() {
   const [remember, setRemember] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const router = useRouter();
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -30,7 +32,8 @@ export function LoginForm() {
       });
       const data = (await res.json()) as { redirect?: string; error?: string };
       if (!res.ok || !data.redirect) throw new Error(data.error ?? 'Não foi possível entrar.');
-      window.location.assign(data.redirect);
+      router.replace(data.redirect);
+      router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Não foi possível entrar.');
       setLoading(false);

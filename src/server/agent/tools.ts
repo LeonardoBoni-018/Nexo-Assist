@@ -56,7 +56,9 @@ export function createNexoTools(ctx: ToolContext) {
       rec.run('buscar_central_ajuda', 'buscou na central de ajuda', { consulta }, async (track) => {
         const articles = await ctx.tickets(track).searchKb(consulta);
         const relevant = articles.filter((a) => a.score >= 0.25);
-        if (relevant.length > 0) rec.addUi({ type: 'articles', articles: relevant.slice(0, 2).map((a) => ({ id: a.id, title: a.title })) });
+        // Na tela, só o artigo claramente relevante; o modelo recebe todos os candidatos.
+        const top = relevant[0];
+        if (top && top.score >= 0.4) rec.addUi({ type: 'articles', articles: [{ id: top.id, title: top.title }] });
         return {
           result: { artigos: relevant.map((a) => ({ id: a.id, titulo: a.title, conteudo: a.body, relevancia: a.score })) },
           summary: relevant.length ? `Encontrou: ${relevant.map((a) => `${a.id} "${a.title}" (${a.score})`).join('; ')}` : 'Nenhum artigo relevante.',

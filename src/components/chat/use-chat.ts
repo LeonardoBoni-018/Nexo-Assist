@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import type { ConversationView, DraftView, MessageView, StreamEvent, TraceStep, UiBlock } from '@/shared/chat';
 
 export interface StreamingTurn {
@@ -9,10 +10,12 @@ export interface StreamingTurn {
   ui: UiBlock[];
 }
 
+export class SessionExpired extends Error {}
+
 async function api<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, { ...init, headers: { 'content-type': 'application/json', ...init?.headers } });
   const data = (await res.json().catch(() => ({}))) as T & { error?: string };
-  if (res.status === 401) window.location.assign('/login');
+  if (res.status === 401) throw new SessionExpired(data.error ?? 'Sessão expirada.');
   if (!res.ok) throw new Error(data.error ?? 'Algo deu errado. Tente novamente.');
   return data;
 }
@@ -24,18 +27,35 @@ export function useChat() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const busyRef = useRef(false);
+  const router = useRouter();
 
-  const load = useCallback(async () => {
-    try {
-      setConversation(await api<ConversationView>('/api/conversation'));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Não foi possível carregar a conversa.');
-    }
-  }, []);
+  const fail = useCallback(
+    (e: unknown, fallback: string) => {
+      if (e instanceof SessionExpired) {
+        router.replace('/login');
+        return;
+      }
+      setError(e instanceof Error ? e.message : fallback);
+    },
+    [router],
+  );
+
+  const load = useCallback(
+    () =>
+      api<ConversationView>('/api/conversation').then(setConversation, (e: unknown) => fail(e, 'Não foi possível carregar a conversa.')),
+    [fail],
+  );
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    let alive = true;
+    api<ConversationView>('/api/conversation').then(
+      (c) => alive && setConversation(c),
+      (e: unknown) => alive && fail(e, 'Não foi possível carregar a conversa.'),
+    );
+    return () => {
+      alive = false;
+    };
+  }, [fail]);
 
   // Com um analista, as mensagens chegam por atualização periódica.
   const status = conversation?.status;
@@ -62,7 +82,7 @@ export function useChat() {
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ conversationId: conversation.id, text }),
         });
-        if (res.status === 401) window.location.assign('/login');
+        if (res.status === 401) throw new SessionExpired('Sessão expirada.');
         const type = res.headers.get('content-type') ?? '';
         if (!type.includes('text/event-stream')) {
           const data = (await res.json().catch(() => ({}))) as { error?: string; queued?: boolean; message?: MessageView };
@@ -92,7 +112,7 @@ export function useChat() {
         }
         await load();
       } catch (e) {
-        setError(e instanceof Error ? e.message : 'Não foi possível enviar.');
+        fail(e, 'Não foi possível enviar.');
       } finally {
         setStreaming(null);
         busyRef.current = false;
@@ -134,7 +154,7 @@ export function useChat() {
         }
       }
     },
-    [conversation, load],
+    [conversation, load, fail],
   );
 
   const draftAction = useCallback(async (id: string, action: 'confirm' | 'cancel') => {
@@ -146,12 +166,12 @@ export function useChat() {
       appendMessages(data.messages, { [data.draft.id]: data.draft });
       setConversation((c) => (c ? { ...c, userMessageCount: c.userMessageCount + 1 } : c));
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Não foi possível concluir.');
+      fail(e, 'Não foi possível concluir.');
     } finally {
       busyRef.current = false;
       setBusy(false);
     }
-  }, []);
+  }, [fail]);
 
   const editDraft = useCallback(async (id: string, fields: Partial<Pick<DraftView, 'title' | 'description' | 'category' | 'note'>>) => {
     const data = await api<{ draft: DraftView }>(`/api/drafts/${id}`, { method: 'PATCH', body: JSON.stringify(fields) });
@@ -163,9 +183,9 @@ export function useChat() {
     try {
       setConversation(await api<ConversationView>('/api/conversation/new', { method: 'POST' }));
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Não foi possível iniciar uma nova conversa.');
+      fail(e, 'Não foi possível iniciar uma nova conversa.');
     }
-  }, []);
+  }, [fail]);
 
   return { conversation, streaming, busy, error, setError, send, draftAction, editDraft, newConversation };
 }

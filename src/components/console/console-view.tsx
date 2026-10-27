@@ -7,7 +7,8 @@ import { OPEN_STATUSES, PRIORITY_LABEL, STATUS_LABEL } from '@/domain/types';
 import type { ConversationView, MessageView, TicketSummary, UiBlock } from '@/shared/chat';
 import type { ConsoleItem } from '@/server/console';
 import { Avatar, NexoMark } from '../brand';
-import { logout } from '../sidebar';
+import { useLogout } from '../sidebar';
+import { useRouter } from 'next/navigation';
 import { DecisionPanel, StatusLine } from '../chat/decision-panel';
 import { RichText } from '../chat/messages';
 import { STATUS_DOT } from '../chat/blocks';
@@ -26,9 +27,11 @@ interface Detail {
   ticketsError: string | null;
 }
 
+class SessionExpired extends Error {}
+
 async function api<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, { ...init, headers: { 'content-type': 'application/json' } });
-  if (res.status === 401) window.location.assign('/login');
+  if (res.status === 401) throw new SessionExpired();
   const data = (await res.json().catch(() => ({}))) as T & { error?: string };
   if (!res.ok) throw new Error(data.error ?? 'Algo deu errado.');
   return data;
@@ -60,42 +63,72 @@ export function ConsoleView() {
   const [text, setText] = useState('');
   const [now, setNow] = useState(() => new Date());
   const scroller = useRef<HTMLDivElement>(null);
+  const router = useRouter();
+  const logout = useLogout();
+  const selectedRef = useRef<string | null>(null);
 
-  const loadList = useCallback(async () => {
-    try {
-      const data = await api<ListData>('/api/console/conversations');
-      setList(data);
-      setSelected((s) => s ?? data.items.find((i) => i.needsHuman)?.id ?? data.items[0]?.id ?? null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Falha ao carregar conversas.');
-    }
-  }, []);
+  const fail = useCallback(
+    (e: unknown, fallback: string) => {
+      if (e instanceof SessionExpired) router.replace('/login');
+      else setError(e instanceof Error ? e.message : fallback);
+    },
+    [router],
+  );
 
-  const loadDetail = useCallback(async (id: string) => {
-    try {
-      const d = await api<Detail>(`/api/console/conversations/${id}`);
-      setDetail((prev) => (prev?.conversation.id === id || !prev || prev.conversation.id !== d.conversation.id ? d : prev));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Falha ao carregar a conversa.');
-    }
-  }, []);
+  const loadList = useCallback(
+    () =>
+      api<ListData>('/api/console/conversations').then(
+        (data) => {
+          setList(data);
+          setSelected((s) => s ?? data.items.find((i) => i.needsHuman)?.id ?? data.items[0]?.id ?? null);
+        },
+        (e: unknown) => fail(e, 'Falha ao carregar conversas.'),
+      ),
+    [fail],
+  );
+
+  // Ignora respostas que chegam depois de o analista trocar de conversa.
+  const loadDetail = useCallback(
+    (id: string) =>
+      api<Detail>(`/api/console/conversations/${id}`).then(
+        (d) => {
+          if (selectedRef.current === id) setDetail(d);
+        },
+        (e: unknown) => fail(e, 'Falha ao carregar a conversa.'),
+      ),
+    [fail],
+  );
 
   useEffect(() => {
-    void loadList();
-    const t = setInterval(() => {
+    const tick = () => {
       void loadList();
       setNow(new Date());
-    }, 3000);
-    return () => clearInterval(t);
+    };
+    const first = setTimeout(tick, 0);
+    const t = setInterval(tick, 3000);
+    return () => {
+      clearTimeout(first);
+      clearInterval(t);
+    };
   }, [loadList]);
 
   useEffect(() => {
+    selectedRef.current = selected;
     if (!selected) return;
-    setDetail((d) => (d?.conversation.id === selected ? d : null));
-    void loadDetail(selected);
+    const first = setTimeout(() => void loadDetail(selected), 0);
     const t = setInterval(() => void loadDetail(selected), 3000);
-    return () => clearInterval(t);
+    return () => {
+      clearTimeout(first);
+      clearInterval(t);
+    };
   }, [selected, loadDetail]);
+
+  function select(id: string) {
+    if (id === selected) return;
+    setDetail(null);
+    setText('');
+    setSelected(id);
+  }
 
   const msgCount = detail?.conversation.messages.length ?? 0;
   useEffect(() => {
@@ -122,7 +155,7 @@ export function ConsoleView() {
       if (action === 'message') setText('');
       await Promise.all([loadDetail(selected), loadList()]);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Não foi possível concluir.');
+      fail(e, 'Não foi possível concluir.');
     } finally {
       setActing(null);
     }
@@ -164,7 +197,7 @@ export function ConsoleView() {
             <Search size={15} className="text-ink-3" />
             <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Pesquisar conversa ou chamado" className="w-full bg-transparent text-[13.5px] outline-none placeholder:text-ink-3" />
           </label>
-          <div className="flex gap-1.5">
+          <div className="flex gap-0.5">
             {(
               [
                 ['all', 'Todas', null],
@@ -193,7 +226,7 @@ export function ConsoleView() {
           ) : (
             items.map((i) => (
               <li key={i.id}>
-                <button onClick={() => setSelected(i.id)} className={`flex w-full gap-3 rounded-xl px-3 py-3 text-left ${selected === i.id ? 'bg-desk' : 'hover:bg-desk/60'}`}>
+                <button onClick={() => select(i.id)} className={`flex w-full gap-3 rounded-xl px-3 py-3 text-left ${selected === i.id ? 'bg-desk' : 'hover:bg-desk/60'}`}>
                   <Avatar name={i.userName} size={40} />
                   <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                     <span className="flex items-baseline justify-between gap-2">

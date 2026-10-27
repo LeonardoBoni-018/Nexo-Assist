@@ -21,7 +21,7 @@ export function ChatView({ firstName }: { firstName: string }) {
     return () => clearInterval(t);
   }, []);
 
-  const messages = conversation?.messages ?? [];
+  const messages = useMemo(() => conversation?.messages ?? [], [conversation]);
   const status = conversation?.status ?? 'agent';
   const limitReached = conversation ? conversation.userMessageCount >= conversation.messageLimit : false;
   const canType = Boolean(conversation) && status !== 'closed' && !limitReached;
@@ -39,8 +39,12 @@ export function ChatView({ firstName }: { firstName: string }) {
     if (!v || busy || !canType) return;
     setText('');
     await send(v);
-    input.current?.focus();
   }
+
+  // Devolve o foco ao campo quando a resposta termina.
+  useEffect(() => {
+    if (!busy) input.current?.focus();
+  }, [busy]);
 
   const handlers = (interactive: boolean): BlockHandlers => ({
     now,
