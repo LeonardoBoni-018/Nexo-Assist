@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { handle, readJson } from '@/server/api';
+import { clientIp, handle, rateLimit, readJson } from '@/server/api';
 import { requireUser } from '@/server/auth';
 import { getStore, ticketsFor } from '@/server/context';
 import { env } from '@/server/env';
@@ -16,6 +16,7 @@ const busy = new Set<string>();
 
 export const POST = handle(async (req: Request) => {
   const user = await requireUser('employee');
+  rateLimit(`chat:${clientIp(req)}`, 20, 60_000);
   const store = getStore();
   const body = await readJson<{ conversationId?: string; text?: string }>(req);
   const text = body.text?.trim() ?? '';
