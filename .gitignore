@@ -8,3 +8,4 @@ data/*
 *.tsbuildinfo
 next-env.d.ts
 coverage/
+services/tickets/.vercel/
