@@ -23,7 +23,7 @@ npm run setup          # cria o .env a partir do .env.example
 npm run dev            # sobe o serviço de chamados (:4001) e o app (:3000)
 ```
 
-Abra http://localhost:3000. Qualquer senha funciona para os usuários de exemplo (a tela de login lista os principais):
+Abra http://localhost:3000 (ou use a versão publicada, na seção Deploy). Qualquer senha funciona para os usuários de exemplo (a tela de login lista os principais):
 
 | Usuário | Perfil | Bom para testar |
 | --- | --- | --- |
@@ -150,6 +150,8 @@ O que esses testes **não** medem é a qualidade das escolhas do modelo real em 
 6. Mascarar dados sensíveis (senhas digitadas por engano) antes de enviar ao modelo.
 
 ## Deploy (gratuito)
+
+**No ar:** https://nexo-assist-seven.vercel.app (serviço de chamados: https://nexo-assist-tickets.vercel.app/health). Mesmos usuários de exemplo, qualquer senha.
 
 Tudo roda em planos gratuitos:
 
