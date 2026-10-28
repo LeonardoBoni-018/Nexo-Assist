@@ -3,6 +3,7 @@ import type { AddressInfo } from 'node:net';
 import { createTicketService } from '../../services/tickets/src/app';
 import { TicketStore } from '../../services/tickets/src/store';
 import { AppStore } from '@/server/store';
+import { PEOPLE } from '../../seed/people';
 import { createTicketsClient } from '@/server/tickets-client';
 import { runTurn } from '@/server/agent/turn';
 import type { StreamEvent } from '@/shared/chat';
@@ -12,7 +13,7 @@ export const SERVICE_KEY = 'test-key';
 
 /** Sobe o serviço de chamados (porta aleatória) e um banco do app em memória. */
 export async function startHarness(opts: { failureRate?: number } = {}) {
-  const ticketStore = new TicketStore(':memory:');
+  const ticketStore = await TicketStore.open(undefined, ':memory:');
   const service = { failureRate: opts.failureRate ?? 0 };
   const app = createTicketService({
     store: ticketStore,
@@ -27,10 +28,11 @@ export async function startHarness(opts: { failureRate?: number } = {}) {
   });
   const { port } = server.address() as AddressInfo;
   const baseUrl = `http://127.0.0.1:${port}`;
-  const store = new AppStore(':memory:');
+  const store = await AppStore.open(undefined, ':memory:');
 
+  // O diretório de pessoas é fixo (seed); evita uma consulta assíncrona aqui.
   const ticketsAs = (email: string, role: 'employee' | 'analyst' = 'employee') => {
-    const person = store.findUser(email)!;
+    const person = PEOPLE.find((p) => p.email === email)!;
     return (onCall?: (i: { attempts: number }) => void) =>
       createTicketsClient({
         baseUrl,
@@ -43,12 +45,12 @@ export async function startHarness(opts: { failureRate?: number } = {}) {
 
   /** Roda um turno com um modelo roteirizado e devolve mensagem + eventos SSE. */
   async function turn(email: string, conversationId: string, text: string, script: ScriptAction[][]) {
-    const person = store.findUser(email)!;
+    const person = (await store.findUser(email))!;
     const { model } = scriptedModel(script);
     const events: StreamEvent[] = [];
     const message = await runTurn(
       { store, model, modelName: 'claude-opus-5-5', tickets: ticketsAs(email), messageLimit: 30, minConfidence: 0.4 },
-      { person, conversation: store.getConversation(conversationId)!, text, emit: (e) => events.push(e) },
+      { person, conversation: (await store.getConversation(conversationId))!, text, emit: (e) => events.push(e) },
     );
     return { message, events };
   }

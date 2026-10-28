@@ -16,7 +16,7 @@ export const SESSION_COOKIE = 'nexo_session';
 export async function getSessionUser(): Promise<Person | null> {
   const jar = await cookies();
   const email = verifySessionToken(jar.get(SESSION_COOKIE)?.value, env.sessionSecret);
-  return email ? getStore().findUser(email) : null;
+  return email ? (await getStore()).findUser(email) : null;
 }
 
 export async function requireUser(role?: Person['role']): Promise<Person> {

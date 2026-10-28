@@ -13,7 +13,7 @@ export const POST = handle(async (req: Request) => {
   if (!email.endsWith('@nexo.com.br')) throw new HttpError(400, 'Use seu e-mail corporativo (@nexo.com.br).');
   if (!body.password) throw new HttpError(400, 'Informe a senha.');
   // Ambiente de demonstração: qualquer senha é aceita para os usuários de exemplo.
-  const user = getStore().findUser(email);
+  const user = await (await getStore()).findUser(email);
   if (!user) throw new HttpError(401, 'E-mail não encontrado. Use um dos usuários de exemplo.');
   const { token, maxAge } = createSessionToken(user.email, Boolean(body.remember), env.sessionSecret);
   const res = NextResponse.json({ role: user.role, redirect: user.role === 'analyst' ? '/console' : '/chat' });

@@ -120,7 +120,7 @@ export function createNexoTools(ctx: ToolContext) {
           ? `${SLA[t.priority].label} → ${t.sla.overdue ? 'vencido desde' : 'até'} ${formatLocalDateTime(t.sla.dueAt, now)}`
           : 'Prazo não está correndo (pausado ou encerrado).');
         rec.addUi({ type: 'ticket', ticket: toSummary(t) });
-        ctx.store.updateConversation(ctx.conversationId, { focusTicketId: t.id });
+        await ctx.store.updateConversation(ctx.conversationId, { focusTicketId: t.id });
         return {
           result: {
             ...forModel(t, now),
@@ -194,7 +194,7 @@ export function createNexoTools(ctx: ToolContext) {
         rec.note('consultar_sla', 'consultou o SLA', { prioridade: decision.priority }, `${SLA[decision.priority].label} → resposta até ${formatLocalDateTime(due.toISOString(), now)}`);
 
         const draft: DraftView = {
-          id: ctx.store.nextDraftId(),
+          id: await ctx.store.nextDraftId(),
           kind: 'create',
           status: 'pending',
           ticketId: null,
@@ -209,7 +209,7 @@ export function createNexoTools(ctx: ToolContext) {
           dueAt: due.toISOString(),
           note: null,
         };
-        ctx.store.saveDraft(ctx.conversationId, draft);
+        await ctx.store.saveDraft(ctx.conversationId, draft);
         rec.addUi({ type: 'draft', draftId: draft.id }, draft);
         return {
           result: {
@@ -244,7 +244,7 @@ export function createNexoTools(ctx: ToolContext) {
           };
         }
         const draft: DraftView = {
-          id: ctx.store.nextDraftId(),
+          id: await ctx.store.nextDraftId(),
           kind: open ? 'update' : 'reopen',
           status: 'pending',
           ticketId: t.id,
@@ -259,8 +259,8 @@ export function createNexoTools(ctx: ToolContext) {
           dueAt: t.sla.dueAt ?? computeDueAt(t.priority, now).toISOString(),
           note: comentario,
         };
-        ctx.store.saveDraft(ctx.conversationId, draft);
-        ctx.store.updateConversation(ctx.conversationId, { focusTicketId: t.id });
+        await ctx.store.saveDraft(ctx.conversationId, draft);
+        await ctx.store.updateConversation(ctx.conversationId, { focusTicketId: t.id });
         rec.addUi({ type: 'draft', draftId: draft.id }, draft);
         return {
           result: { rascunho: draft.id, tipo: draft.kind === 'reopen' ? 'reabertura' : 'complemento', proximo_passo: 'Peça para conferir e confirmar no card.' },

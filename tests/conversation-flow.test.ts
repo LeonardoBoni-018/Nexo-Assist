@@ -15,9 +15,9 @@ describe('rascunhos, console do analista e histórico', () => {
   });
   afterAll(async () => h.close());
 
-  function pendingDraft(conversationId: string): DraftView {
+  async function pendingDraft(conversationId: string): Promise<DraftView> {
     const draft: DraftView = {
-      id: h.store.nextDraftId(),
+      id: (await h.store.nextDraftId()),
       kind: 'create',
       status: 'pending',
       ticketId: null,
@@ -32,14 +32,14 @@ describe('rascunhos, console do analista e histórico', () => {
       dueAt: new Date().toISOString(),
       note: null,
     };
-    h.store.saveDraft(conversationId, draft);
+    (await h.store.saveDraft(conversationId, draft));
     return draft;
   }
 
   it('confirmar cria o chamado uma vez; segunda confirmação é recusada', async () => {
-    const ana = h.store.findUser(ANA)!;
-    const conv = h.store.createConversation(ANA);
-    const draft = pendingDraft(conv.id);
+    const ana = (await h.store.findUser(ANA))!;
+    const conv = (await h.store.createConversation(ANA));
+    const draft = await pendingDraft(conv.id);
     const { draft: done, messages } = await confirmDraft(h.store, ana, draft.id, h.ticketsAs(ANA));
     expect(done.status).toBe('confirmed');
     expect(messages[1]!.ui[0]).toMatchObject({ type: 'ticket' });
@@ -48,56 +48,56 @@ describe('rascunhos, console do analista e histórico', () => {
   });
 
   it('com o legado fora do ar, o rascunho continua pendente para nova tentativa', async () => {
-    const ana = h.store.findUser(ANA)!;
-    const conv = h.store.createConversation(ANA);
-    const draft = pendingDraft(conv.id);
+    const ana = (await h.store.findUser(ANA))!;
+    const conv = (await h.store.createConversation(ANA));
+    const draft = await pendingDraft(conv.id);
     h.service.failureRate = 1;
     try {
       await expect(confirmDraft(h.store, ana, draft.id, h.ticketsAs(ANA))).rejects.toMatchObject({ status: 503 });
     } finally {
       h.service.failureRate = 0;
     }
-    expect(h.store.getDraft(draft.id)!.draft.status).toBe('pending');
+    expect((await h.store.getDraft(draft.id))!.draft.status).toBe('pending');
     expect((await confirmDraft(h.store, ana, draft.id, h.ticketsAs(ANA))).draft.status).toBe('confirmed');
   });
 
   it('ninguém confirma rascunho de outra pessoa', async () => {
-    const conv = h.store.createConversation(ANA);
-    const draft = pendingDraft(conv.id);
-    const bruno = h.store.findUser('bruno.tavares@nexo.com.br')!;
+    const conv = (await h.store.createConversation(ANA));
+    const draft = await pendingDraft(conv.id);
+    const bruno = (await h.store.findUser('bruno.tavares@nexo.com.br'))!;
     await expect(confirmDraft(h.store, bruno, draft.id, h.ticketsAs(bruno.email))).rejects.toMatchObject({ status: 404 });
-    expect(cancelDraft(h.store, h.store.findUser(ANA)!, draft.id).draft.status).toBe('cancelled');
+    expect((await cancelDraft(h.store, (await h.store.findUser(ANA))!, draft.id)).draft.status).toBe('cancelled');
   });
 
   it('assumir pausa o agent; só quem assumiu responde, devolve ou encerra', async () => {
-    const rafael = h.store.findUser('rafael.lima@nexo.com.br')!;
-    const juliana = h.store.findUser('juliana.costa@nexo.com.br')!;
-    const conv = h.store.createConversation(ANA);
-    h.store.addMessage(conv.id, { role: 'user', authorName: 'Ana Souza', content: 'Quero falar com alguém' });
+    const rafael = (await h.store.findUser('rafael.lima@nexo.com.br'))!;
+    const juliana = (await h.store.findUser('juliana.costa@nexo.com.br'))!;
+    const conv = (await h.store.createConversation(ANA));
+    (await h.store.addMessage(conv.id, { role: 'user', authorName: 'Ana Souza', content: 'Quero falar com alguém' }));
 
-    expect(() => analystMessage(h.store, rafael, conv.id, 'oi')).toThrow('Assuma o atendimento');
+    await expect(analystMessage(h.store, rafael, conv.id, 'oi')).rejects.toThrow('Assuma o atendimento');
     await takeOver(h.store, rafael, conv.id, h.ticketsAs(rafael.email, 'analyst')());
-    expect(h.store.getConversation(conv.id)!.status).toBe('human');
+    expect((await h.store.getConversation(conv.id))!.status).toBe('human');
     await expect(takeOver(h.store, juliana, conv.id, h.ticketsAs(juliana.email, 'analyst')())).rejects.toMatchObject({ status: 409 });
-    expect(analystMessage(h.store, rafael, conv.id, 'Oi, Ana!').role).toBe('analyst');
-    expect(() => returnToAgent(h.store, juliana, conv.id)).toThrow();
+    expect((await analystMessage(h.store, rafael, conv.id, 'Oi, Ana!')).role).toBe('analyst');
+    await expect(returnToAgent(h.store, juliana, conv.id)).rejects.toThrow();
 
-    returnToAgent(h.store, rafael, conv.id);
-    expect(h.store.getConversation(conv.id)).toMatchObject({ status: 'agent', assignedAnalystEmail: null, handoff: null });
-    closeConversation(h.store, rafael, conv.id);
-    expect(h.store.getConversation(conv.id)!.status).toBe('closed');
+    await returnToAgent(h.store, rafael, conv.id);
+    expect(await h.store.getConversation(conv.id)).toMatchObject({ status: 'agent', assignedAnalystEmail: null, handoff: null });
+    await closeConversation(h.store, rafael, conv.id);
+    expect((await h.store.getConversation(conv.id))!.status).toBe('closed');
   });
 
   it('histórico para o modelo resume cards e reflete o estado atual do rascunho', async () => {
-    const conv = h.store.createConversation(ANA);
-    const draft = pendingDraft(conv.id);
-    h.store.addMessage(conv.id, { role: 'assistant', authorName: 'Nexo Assist', content: 'Olá!' }); // antes do usuário: descartada
-    h.store.addMessage(conv.id, { role: 'user', authorName: 'Ana', content: 'Meu mouse parou' });
-    h.store.addMessage(conv.id, { role: 'assistant', authorName: 'Nexo Assist', content: 'Confira:', ui: [{ type: 'draft', draftId: draft.id }] });
-    h.store.addMessage(conv.id, { role: 'system', authorName: 'Sistema', content: 'Transferida para Suporte N1' });
-    h.store.saveDraft(conv.id, { ...draft, status: 'confirmed', ticketId: 'INC-99999' });
+    const conv = (await h.store.createConversation(ANA));
+    const draft = await pendingDraft(conv.id);
+    (await h.store.addMessage(conv.id, { role: 'assistant', authorName: 'Nexo Assist', content: 'Olá!' })); // antes do usuário: descartada
+    (await h.store.addMessage(conv.id, { role: 'user', authorName: 'Ana', content: 'Meu mouse parou' }));
+    (await h.store.addMessage(conv.id, { role: 'assistant', authorName: 'Nexo Assist', content: 'Confira:', ui: [{ type: 'draft', draftId: draft.id }] }));
+    (await h.store.addMessage(conv.id, { role: 'system', authorName: 'Sistema', content: 'Transferida para Suporte N1' }));
+    (await h.store.saveDraft(conv.id, { ...draft, status: 'confirmed', ticketId: 'INC-99999' }));
 
-    const history = historyForModel(h.store.listMessages(conv.id), h.store.listDrafts(conv.id));
+    const history = historyForModel(await h.store.listMessages(conv.id), (await h.store.listDrafts(conv.id)));
     expect(history.map((m) => m.role)).toEqual(['user', 'assistant']);
     expect(history[1]!.content).toContain(`[rascunho ${draft.id}: "Mouse sem funcionar" — confirmado → INC-99999]`);
     expect(history[1]!.content).toContain('[Sistema]: Transferida para Suporte N1');

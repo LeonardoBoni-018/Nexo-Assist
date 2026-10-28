@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
 
 export const GET = handle(async () => {
   const me = await requireUser('analyst');
-  const items = listForConsole(getStore(), me);
+  const items = await listForConsole(await getStore(), me);
   return NextResponse.json({
     me: { name: me.name, email: me.email, supportLevel: me.supportLevel ?? null },
     items,

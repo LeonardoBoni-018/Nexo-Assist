@@ -3,7 +3,8 @@ import type { ConversationView, DraftView, MessageView } from '@/shared/chat';
 import type { HandoffRequest } from './agent/recorder';
 import type { AppStore, ConversationRow } from './store';
 
-export function conversationView(store: AppStore, c: ConversationRow, messageLimit: number): ConversationView {
+export async function conversationView(store: AppStore, c: ConversationRow, messageLimit: number): Promise<ConversationView> {
+  const [messages, drafts] = await Promise.all([store.listMessages(c.id), store.listDrafts(c.id)]);
   return {
     id: c.id,
     status: c.status,
@@ -11,14 +12,14 @@ export function conversationView(store: AppStore, c: ConversationRow, messageLim
     messageLimit,
     assignedAnalyst: c.assignedAnalystName,
     handoff: c.handoff,
-    messages: store.listMessages(c.id),
-    drafts: store.listDrafts(c.id),
+    messages,
+    drafts,
   };
 }
 
 /** Marca a conversa como aguardando atendente; o agent para de responder. */
-export function applyHandoff(store: AppStore, conversationId: string, h: HandoffRequest, now = new Date()): MessageView {
-  store.updateConversation(conversationId, {
+export async function applyHandoff(store: AppStore, conversationId: string, h: HandoffRequest, now = new Date()): Promise<MessageView> {
+  await store.updateConversation(conversationId, {
     status: 'waiting_human',
     handoff: { level: h.level, reason: h.reason, summary: h.summary, at: now.toISOString(), lowConfidence: h.lowConfidence },
     unreadForAnalyst: 1,

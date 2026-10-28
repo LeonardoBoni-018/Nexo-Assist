@@ -16,11 +16,11 @@ type Ctx = { params: Promise<{ id: string }> };
 export const GET = handle(async (_req: Request, ctx: Ctx) => {
   const me = await requireUser('analyst');
   const { id } = await ctx.params;
-  const store = getStore();
-  const conv = store.getConversation(id);
+  const store = await getStore();
+  const conv = await store.getConversation(id);
   if (!conv) throw new HttpError(404, 'Conversa não encontrada.');
-  markRead(store, id);
-  const person = store.findUser(conv.userEmail)!;
+  await markRead(store, id);
+  const person = (await store.findUser(conv.userEmail))!;
   let tickets = null;
   let ticketsError: string | null = null;
   try {
@@ -29,7 +29,7 @@ export const GET = handle(async (_req: Request, ctx: Ctx) => {
     ticketsError = 'Sistema de chamados indisponível no momento.';
   }
   return NextResponse.json({
-    conversation: conversationView(store, conv, env.messageLimit),
+    conversation: await conversationView(store, conv, env.messageLimit),
     focusTicketId: conv.focusTicketId,
     user: { name: person.name, email: person.email, department: person.department, device: person.device },
     tickets,

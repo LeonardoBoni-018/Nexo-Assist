@@ -10,8 +10,8 @@ FROM node:22-slim
 WORKDIR /app
 ENV NODE_ENV=production \
     NODE_NO_WARNINGS=1 \
-    APP_DB_PATH=/app/data/app.db \
-    TICKETS_DB_PATH=/app/data/tickets.db
+    APP_DB_PATH=/app/data/app \
+    TICKETS_DB_PATH=/app/data/tickets
 COPY --from=build /app /app
 RUN mkdir -p /app/data
 EXPOSE 3000

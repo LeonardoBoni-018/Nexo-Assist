@@ -7,7 +7,8 @@ import type { TicketStore } from './store';
 import { canReopen } from '../../../src/domain/similarity';
 
 export interface ServiceOptions {
-  store: TicketStore;
+  /** Pode ser uma promessa: em serverless o banco abre na primeira requisição. */
+  store: TicketStore | Promise<TicketStore>;
   serviceKey: string;
   /** Probabilidade (0–1) de responder 503, simulando o sistema legado. */
   failureRate: number;
@@ -28,7 +29,7 @@ function safeEqual(a: string, b: string): boolean {
 }
 
 export function createTicketService(opts: ServiceOptions) {
-  const { store } = opts;
+  const storeReady = Promise.resolve(opts.store);
   const now = opts.now ?? (() => new Date());
   const app = new Hono<Env>();
 
@@ -59,8 +60,8 @@ export function createTicketService(opts: ServiceOptions) {
    * Privacidade (Anexo A): um funcionário só enxerga os próprios chamados.
    * Chamado de outra pessoa responde 404 — não confirma nem que ele existe.
    */
-  const load = (c: Context<Env>): Ticket | null => {
-    const t = store.get(c.req.param('id') ?? '');
+  const load = async (c: Context<Env>): Promise<Ticket | null> => {
+    const t = await (await storeReady).get(c.req.param('id') ?? '');
     const actor = c.get('actor');
     if (!t) return null;
     if (actor.role === 'employee' && t.requesterEmail !== actor.email) return null;
@@ -72,43 +73,44 @@ export function createTicketService(opts: ServiceOptions) {
     const key = c.req.header('idempotency-key');
     if (key) {
       const scoped = `${c.get('actor').email}:${key}`;
-      const previous = store.recall(scoped) as { status: number; body: unknown } | null;
+      const store = await storeReady;
+      const previous = (await store.recall(scoped)) as { status: number; body: unknown } | null;
       if (previous) return c.json(previous.body as object, previous.status as 200);
       const res = await run();
-      if (res.status < 300) store.remember(scoped, { status: res.status, body: await res.clone().json() });
+      if (res.status < 300) await store.remember(scoped, { status: res.status, body: await res.clone().json() });
       return res;
     }
     return run();
   };
 
-  app.get('/tickets', (c) => {
+  app.get('/tickets', async (c) => {
     const actor = c.get('actor');
     const requester = (c.req.query('requester') ?? actor.email).toLowerCase();
     if (actor.role === 'employee' && requester !== actor.email) return fail(c, 404, 'not_found', 'Nenhum chamado encontrado.');
-    return c.json({ tickets: store.listByRequester(requester).map(view) });
+    return c.json({ tickets: (await (await storeReady).listByRequester(requester)).map(view) });
   });
 
-  app.get('/tickets/:id', (c) => {
-    const t = load(c);
+  app.get('/tickets/:id', async (c) => {
+    const t = await load(c);
     return t ? c.json({ ticket: view(t) }) : fail(c, 404, 'not_found', 'Chamado não encontrado.');
   });
 
   app.post('/tickets', async (c) => {
     const parsed = createTicketBody.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return fail(c, 400, 'invalid', parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '));
-    return once(c, () => c.json({ ticket: view(store.create(parsed.data, c.get('actor'), now())) }, 201));
+    return once(c, async () => c.json({ ticket: view(await (await storeReady).create(parsed.data, c.get('actor'), now())) }, 201));
   });
 
   app.post('/tickets/:id/comments', async (c) => {
-    const t = load(c);
+    const t = await load(c);
     if (!t) return fail(c, 404, 'not_found', 'Chamado não encontrado.');
     const parsed = commentBody.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return fail(c, 400, 'invalid', 'Comentário inválido.');
     const actor = c.get('actor');
-    return once(c, () =>
+    return once(c, async () =>
       c.json({
         ticket: view(
-          store.addEvent(
+          await (await storeReady).addEvent(
             t,
             { author: actor.role === 'analyst' ? 'suporte' : 'funcionario', authorName: actor.name, kind: 'comentario', text: parsed.data.text },
             now(),
@@ -119,16 +121,16 @@ export function createTicketService(opts: ServiceOptions) {
   });
 
   app.post('/tickets/:id/reopen', async (c) => {
-    const t = load(c);
+    const t = await load(c);
     if (!t) return fail(c, 404, 'not_found', 'Chamado não encontrado.');
     if (!canReopen(t, now())) return fail(c, 409, 'conflict', 'Só é possível reabrir chamados resolvidos há até 7 dias.');
     const parsed = reopenBody.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return fail(c, 400, 'invalid', 'Motivo inválido.');
     const actor = c.get('actor');
-    return once(c, () =>
+    return once(c, async () =>
       c.json({
         ticket: view(
-          store.addEvent(t, { author: 'funcionario', authorName: actor.name, kind: 'reaberto', text: parsed.data.reason }, now(), {
+          await (await storeReady).addEvent(t, { author: 'funcionario', authorName: actor.name, kind: 'reaberto', text: parsed.data.reason }, now(), {
             status: 'aberto',
             resolvedAt: null,
             // reabertura reinicia o prazo de primeira resposta
@@ -140,14 +142,14 @@ export function createTicketService(opts: ServiceOptions) {
   });
 
   app.post('/tickets/:id/escalate', async (c) => {
-    const t = load(c);
+    const t = await load(c);
     if (!t) return fail(c, 404, 'not_found', 'Chamado não encontrado.');
     const parsed = escalateBody.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return fail(c, 400, 'invalid', 'Resumo inválido.');
-    return once(c, () =>
+    return once(c, async () =>
       c.json({
         ticket: view(
-          store.addEvent(
+          await (await storeReady).addEvent(
             t,
             { author: 'sistema', authorName: 'Nexo Assist', kind: 'transferido', text: `Transferido para Suporte ${parsed.data.level}: ${parsed.data.summary}` },
             now(),
@@ -161,14 +163,14 @@ export function createTicketService(opts: ServiceOptions) {
   app.post('/tickets/:id/status', async (c) => {
     const actor = c.get('actor');
     if (actor.role !== 'analyst') return fail(c, 401, 'unauthorized', 'Apenas analistas alteram o status.');
-    const t = load(c);
+    const t = await load(c);
     if (!t) return fail(c, 404, 'not_found', 'Chamado não encontrado.');
     const parsed = statusBody.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return fail(c, 400, 'invalid', 'Status inválido.');
-    return c.json({ ticket: view(store.setStatus(t, parsed.data.status, actor, parsed.data.note, now())) });
+    return c.json({ ticket: view(await (await storeReady).setStatus(t, parsed.data.status, actor, parsed.data.note, now())) });
   });
 
-  app.get('/kb/search', (c) => c.json({ articles: store.searchKb(c.req.query('q') ?? '') }));
+  app.get('/kb/search', async (c) => c.json({ articles: await (await storeReady).searchKb(c.req.query('q') ?? '') }));
 
   app.onError((err, c) => {
     console.error('[tickets] erro inesperado', err);

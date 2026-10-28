@@ -45,7 +45,7 @@ export async function runTurn(deps: TurnDeps, input: TurnInput): Promise<Message
   const { person, conversation, emit } = input;
   const started = Date.now();
 
-  const userMessage = store.addMessage(conversation.id, { role: 'user', authorName: person.name, content: input.text });
+  const userMessage = await store.addMessage(conversation.id, { role: 'user', authorName: person.name, content: input.text });
   emit({ type: 'user_message', message: userMessage });
 
   const recorder = new TurnRecorder(emit);
@@ -59,9 +59,9 @@ export async function runTurn(deps: TurnDeps, input: TurnInput): Promise<Message
     tools,
   });
 
-  const drafts = store.listDrafts(conversation.id);
-  const fresh = store.getConversation(conversation.id) ?? conversation;
-  const history = historyForModel(store.listMessages(conversation.id), drafts);
+  const drafts = await store.listDrafts(conversation.id);
+  const fresh = (await store.getConversation(conversation.id)) ?? conversation;
+  const history = historyForModel(await store.listMessages(conversation.id), drafts);
   const last = history[history.length - 1];
   if (last?.role === 'user') {
     last.content += `\n\n${turnContext(person, {
@@ -151,10 +151,10 @@ export async function runTurn(deps: TurnDeps, input: TurnInput): Promise<Message
     costUsd: usage ? estimateCostUsd(deps.modelName, usage) : null,
     error,
   };
-  const message = store.addMessage(conversation.id, { role: 'assistant', authorName: 'Nexo Assist', content: text.trim(), ui: recorder.ui, trace });
-  if (recorder.handoff) applyHandoff(store, conversation.id, recorder.handoff, now());
+  const message = await store.addMessage(conversation.id, { role: 'assistant', authorName: 'Nexo Assist', content: text.trim(), ui: recorder.ui, trace });
+  if (recorder.handoff) await applyHandoff(store, conversation.id, recorder.handoff, now());
 
-  const after = store.getConversation(conversation.id)!;
+  const after = (await store.getConversation(conversation.id))!;
   emit({ type: 'done', message, conversation: { status: after.status, userMessageCount: after.userMessageCount, handoff: after.handoff } });
   return message;
 }

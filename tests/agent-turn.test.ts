@@ -16,7 +16,7 @@ describe('turno do agent (modelo roteirizado + serviço de chamados real)', () =
   afterAll(async () => h.close());
 
   it('pergunta quem é afetado e registra etapas, cards, decisão e uso', async () => {
-    const conv = h.store.createConversation(ANA);
+    const conv = (await h.store.createConversation(ANA));
     const { message, events } = await h.turn(ANA, conv.id, 'Meu notebook não conecta na VPN. Erro 809.', [
       [
         { tool: 'listar_meus_chamados', args: {} },
@@ -43,7 +43,7 @@ describe('turno do agent (modelo roteirizado + serviço de chamados real)', () =
   });
 
   it('monta rascunho com prioridade calculada pela regra, sem criar o chamado', async () => {
-    const conv = h.store.createConversation(ANA);
+    const conv = (await h.store.createConversation(ANA));
     const before = (await h.ticketsAs(ANA)().listTickets()).length;
     const { message } = await h.turn(ANA, conv.id, 'Só eu. Tenho reunião com cliente às 14h.', [
       [
@@ -66,7 +66,7 @@ describe('turno do agent (modelo roteirizado + serviço de chamados real)', () =
     ]);
     const draftBlock = message.ui.find((b) => b.type === 'draft');
     expect(draftBlock).toBeDefined();
-    const draft = h.store.getDraft((draftBlock as { draftId: string }).draftId)!.draft;
+    const draft = (await h.store.getDraft((draftBlock as { draftId: string }).draftId))!.draft;
     expect(draft).toMatchObject({ status: 'pending', priority: 'alta', category: 'Rede e VPN' });
     expect(message.trace!.steps.map((s) => s.label)).toEqual(
       expect.arrayContaining(['verificou duplicidade', 'classificou a prioridade', 'consultou o SLA', 'montou o rascunho']),
@@ -76,7 +76,7 @@ describe('turno do agent (modelo roteirizado + serviço de chamados real)', () =
   });
 
   it('não monta rascunho duplicado e devolve o chamado existente', async () => {
-    const conv = h.store.createConversation(ANA);
+    const conv = (await h.store.createConversation(ANA));
     const { message } = await h.turn(ANA, conv.id, 'Meu notebook está lento depois da atualização do Windows', [
       [
         {
@@ -101,7 +101,7 @@ describe('turno do agent (modelo roteirizado + serviço de chamados real)', () =
   });
 
   it('não expõe chamado de outro funcionário', async () => {
-    const conv = h.store.createConversation(ANA);
+    const conv = (await h.store.createConversation(ANA));
     const { message } = await h.turn(ANA, conv.id, 'Qual o status do INC-20402?', [
       [{ tool: 'consultar_chamado', args: { id: 'INC-20402' } }, decision('consultar_chamado', 0.8)],
       [{ text: 'Não encontrei esse chamado entre os seus.' }],
@@ -113,21 +113,21 @@ describe('turno do agent (modelo roteirizado + serviço de chamados real)', () =
   });
 
   it('transfere automaticamente quando a confiança é baixa', async () => {
-    const conv = h.store.createConversation(ANA);
+    const conv = (await h.store.createConversation(ANA));
     const { message } = await h.turn(ANA, conv.id, 'aquele negócio do sistema que deu ruim', [
       [decision('outro', 0.2, 'Mensagem ambígua, não sei qual sistema.')],
       [{ text: 'Não entendi bem.' }],
     ]);
     expect(message.trace!.guards.join(' ')).toContain('abaixo do mínimo');
     expect(message.content).toContain('chamei um analista');
-    const after = h.store.getConversation(conv.id)!;
+    const after = (await h.store.getConversation(conv.id))!;
     expect(after.status).toBe('waiting_human');
     expect(after.handoff?.lowConfidence).toBe(0.2);
-    expect(h.store.listMessages(conv.id).at(-1)!.role).toBe('system');
+    expect((await h.store.listMessages(conv.id)).at(-1)!.role).toBe('system');
   });
 
   it('transferência pedida pelo funcionário marca o chamado como aguardando analista', async () => {
-    const conv = h.store.createConversation(ANA);
+    const conv = (await h.store.createConversation(ANA));
     await h.turn(ANA, conv.id, 'Quero falar com um analista sobre o INC-20311', [
       [
         {
@@ -138,7 +138,7 @@ describe('turno do agent (modelo roteirizado + serviço de chamados real)', () =
       ],
       [{ text: 'Encaminhei para o Suporte N2.' }],
     ]);
-    expect(h.store.getConversation(conv.id)!.status).toBe('waiting_human');
+    expect((await h.store.getConversation(conv.id))!.status).toBe('waiting_human');
     const t = await h.ticketsAs(ANA)().getTicket('INC-20311');
     expect(t.events.at(-1)!.kind).toBe('transferido');
   });
@@ -146,7 +146,7 @@ describe('turno do agent (modelo roteirizado + serviço de chamados real)', () =
   it('com o sistema de chamados fora do ar, retenta e marca a etapa como erro', async () => {
     h.service.failureRate = 1;
     try {
-      const conv = h.store.createConversation(ANA);
+      const conv = (await h.store.createConversation(ANA));
       const { message } = await h.turn(ANA, conv.id, 'Qual o status dos meus chamados?', [
         [{ tool: 'listar_meus_chamados', args: {} }, decision('consultar_chamado', 0.8)],
         [{ text: 'O sistema de chamados está fora do ar agora.' }],
@@ -159,7 +159,7 @@ describe('turno do agent (modelo roteirizado + serviço de chamados real)', () =
   });
 
   it('registra salvaguarda quando o modelo não declara a decisão', async () => {
-    const conv = h.store.createConversation(ANA);
+    const conv = (await h.store.createConversation(ANA));
     const { message } = await h.turn(ANA, conv.id, 'Oi', [[{ text: 'Olá! Como posso ajudar?' }]]);
     expect(message.trace!.decision).toBeNull();
     expect(message.trace!.guards).toContain('O modelo não registrou a decisão deste turno.');

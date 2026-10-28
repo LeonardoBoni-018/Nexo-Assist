@@ -14,9 +14,9 @@ import { toSummary } from './ticket-view';
  * o agent não tem nenhuma ferramenta que grave no sistema de chamados.
  */
 
-function loadOwnDraft(store: AppStore, person: Person, draftId: string) {
-  const found = store.getDraft(draftId);
-  const conversation = found && store.getConversation(found.conversationId);
+async function loadOwnDraft(store: AppStore, person: Person, draftId: string) {
+  const found = await store.getDraft(draftId);
+  const conversation = found && await store.getConversation(found.conversationId);
   if (!found || !conversation || conversation.userEmail !== person.email) throw new HttpError(404, 'Rascunho não encontrado.');
   if (found.draft.status !== 'pending') throw new HttpError(409, 'Este rascunho já foi confirmado ou cancelado.');
   if (conversation.status === 'closed') throw new HttpError(409, 'Esta conversa foi encerrada.');
@@ -43,7 +43,7 @@ export async function confirmDraft(
   tickets: (onCall: (i: CallInfo) => void) => TicketsClient,
   now = new Date(),
 ): Promise<{ draft: DraftView; messages: MessageView[] }> {
-  const { draft, conversation } = loadOwnDraft(store, person, draftId);
+  const { draft, conversation } = await loadOwnDraft(store, person, draftId);
   let attempts = 0;
   const client = tickets((i) => (attempts = i.attempts));
   const started = Date.now();
@@ -77,10 +77,10 @@ export async function confirmDraft(
   }
 
   const confirmed: DraftView = { ...draft, status: 'confirmed', ticketId: ticket.id };
-  store.saveDraft(conversation.id, confirmed);
-  store.updateConversation(conversation.id, { focusTicketId: ticket.id });
+  await store.saveDraft(conversation.id, confirmed);
+  await store.updateConversation(conversation.id, { focusTicketId: ticket.id });
 
-  const userMsg = store.addMessage(conversation.id, { role: 'user', authorName: person.name, content: `Confirmo o rascunho ${draft.id}.` });
+  const userMsg = await store.addMessage(conversation.id, { role: 'user', authorName: person.name, content: `Confirmo o rascunho ${draft.id}.` });
   const due = ticket.sla.dueAt ? formatLocalDateTime(ticket.sla.dueAt, now) : null;
   const text =
     draft.kind === 'create'
@@ -100,7 +100,7 @@ export async function confirmDraft(
     attempts,
     visible: true,
   };
-  const reply = store.addMessage(conversation.id, {
+  const reply = await store.addMessage(conversation.id, {
     role: 'assistant',
     authorName: 'Nexo Assist',
     content: text,
@@ -110,12 +110,12 @@ export async function confirmDraft(
   return { draft: confirmed, messages: [userMsg, reply] };
 }
 
-export function cancelDraft(store: AppStore, person: Person, draftId: string): { draft: DraftView; messages: MessageView[] } {
-  const { draft, conversation } = loadOwnDraft(store, person, draftId);
+export async function cancelDraft(store: AppStore, person: Person, draftId: string): Promise<{ draft: DraftView; messages: MessageView[] }> {
+  const { draft, conversation } = await loadOwnDraft(store, person, draftId);
   const cancelled: DraftView = { ...draft, status: 'cancelled' };
-  store.saveDraft(conversation.id, cancelled);
-  const userMsg = store.addMessage(conversation.id, { role: 'user', authorName: person.name, content: `Cancelo o rascunho ${draft.id}.` });
-  const reply = store.addMessage(conversation.id, {
+  await store.saveDraft(conversation.id, cancelled);
+  const userMsg = await store.addMessage(conversation.id, { role: 'user', authorName: person.name, content: `Cancelo o rascunho ${draft.id}.` });
+  const reply = await store.addMessage(conversation.id, {
     role: 'assistant',
     authorName: 'Nexo Assist',
     content: 'Tudo bem, descartei o rascunho. Se quiser, me conte o que ajustar ou como posso ajudar.',
@@ -131,8 +131,8 @@ export interface DraftEdit {
 }
 
 /** Edição direta no card. Prioridade e afetados não são editáveis aqui: vêm da regra. */
-export function editDraft(store: AppStore, person: Person, draftId: string, edit: DraftEdit): DraftView {
-  const { draft, conversation } = loadOwnDraft(store, person, draftId);
+export async function editDraft(store: AppStore, person: Person, draftId: string, edit: DraftEdit): Promise<DraftView> {
+  const { draft, conversation } = await loadOwnDraft(store, person, draftId);
   const title = edit.title?.trim();
   const description = edit.description?.trim();
   const note = edit.note?.trim();
@@ -147,6 +147,6 @@ export function editDraft(store: AppStore, person: Person, draftId: string, edit
     ...(edit.category !== undefined && draft.kind === 'create' ? { category: edit.category as Category } : {}),
     ...(note !== undefined && draft.kind !== 'create' ? { note } : {}),
   };
-  store.saveDraft(conversation.id, updated);
+  await store.saveDraft(conversation.id, updated);
   return updated;
 }

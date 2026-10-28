@@ -20,8 +20,12 @@ export const env = {
   get ticketsServiceKey() {
     return required('TICKETS_SERVICE_KEY');
   },
+  /** Postgres do app (Neon em produção). Vazio → PGlite local em APP_DB_PATH. */
+  get databaseUrl() {
+    return process.env.DATABASE_URL || undefined;
+  },
   get appDbPath() {
-    return process.env.APP_DB_PATH ?? 'data/app.db';
+    return process.env.APP_DB_PATH ?? 'data/app';
   },
   get model() {
     return process.env.NEXO_MODEL ?? 'claude-opus-5-5';

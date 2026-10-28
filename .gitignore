@@ -1,8 +1,8 @@
 node_modules/
 .next/
 out/
-data/*.db
-data/*.db-*
+data/*
+!data/.gitkeep
 .env
 .env.local
 *.tsbuildinfo

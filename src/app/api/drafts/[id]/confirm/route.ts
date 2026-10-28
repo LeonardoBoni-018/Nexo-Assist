@@ -9,5 +9,5 @@ type Ctx = { params: Promise<{ id: string }> };
 export const POST = handle(async (_req: Request, ctx: Ctx) => {
   const user = await requireUser('employee');
   const { id } = await ctx.params;
-  return NextResponse.json(await confirmDraft(getStore(), user, id, (onCall) => ticketsFor(user, onCall)));
+  return NextResponse.json(await confirmDraft(await getStore(), user, id, (onCall) => ticketsFor(user, onCall)));
 });

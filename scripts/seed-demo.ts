@@ -12,7 +12,7 @@ import { createTicketsClient } from '../src/server/tickets-client';
 import { runTurn } from '../src/server/agent/turn';
 import { scriptedModel, type ScriptAction } from '../tests/helpers/scripted-model';
 
-const store = new AppStore(process.env.APP_DB_PATH ?? 'data/app.db');
+const store = await AppStore.open(process.env.DATABASE_URL || undefined, process.env.APP_DB_PATH ?? 'data/app');
 const baseUrl = process.env.TICKETS_URL ?? 'http://127.0.0.1:4001';
 const serviceKey = process.env.TICKETS_SERVICE_KEY ?? '';
 
@@ -22,12 +22,12 @@ const decide = (entendimento: string, acao: string, confianca: number, justifica
 });
 
 async function conversation(email: string, turns: Array<{ text: string; script: ScriptAction[][] }>) {
-  if (store.getLatestConversation(email)) {
+  if (await store.getLatestConversation(email)) {
     console.log(`- ${email}: já tem conversa, pulando`);
     return;
   }
-  const person = store.findUser(email)!;
-  const conv = store.createConversation(email);
+  const person = (await store.findUser(email))!;
+  const conv = await store.createConversation(email);
   for (const t of turns) {
     const { model } = scriptedModel(t.script);
     await runTurn(
@@ -39,10 +39,10 @@ async function conversation(email: string, turns: Array<{ text: string; script: 
         messageLimit: 30,
         minConfidence: 0.4,
       },
-      { person, conversation: store.getConversation(conv.id)!, text: t.text, emit: () => {} },
+      { person, conversation: (await store.getConversation(conv.id))!, text: t.text, emit: () => {} },
     );
   }
-  console.log(`- ${email}: conversa criada (${store.getConversation(conv.id)!.status})`);
+  console.log(`- ${email}: conversa criada (${(await store.getConversation(conv.id))!.status})`);
 }
 
 async function main() {

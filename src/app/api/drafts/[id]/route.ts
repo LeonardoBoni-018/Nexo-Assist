@@ -10,5 +10,5 @@ export const PATCH = handle(async (req: Request, ctx: Ctx) => {
   const user = await requireUser('employee');
   const { id } = await ctx.params;
   const edit = await readJson<DraftEdit>(req);
-  return NextResponse.json({ draft: editDraft(getStore(), user, id, edit) });
+  return NextResponse.json({ draft: await editDraft(await getStore(), user, id, edit) });
 });
