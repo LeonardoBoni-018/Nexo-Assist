@@ -14,7 +14,7 @@ O agent de atendimento do service desk de TI da Nexo. O funcionário descreve o 
 
 ## Como rodar
 
-Requisitos: **Node.js 22.13+** (usa o SQLite nativo do Node, sem dependências nativas) e uma chave da API da Anthropic.
+Requisitos: **Node.js 22.13+** e uma chave da API da Anthropic. Localmente o banco é um Postgres embutido (PGlite) — nada para instalar.
 
 ```bash
 npm install
@@ -33,7 +33,7 @@ Abra http://localhost:3000. Qualquer senha funciona para os usuários de exemplo
 | `rafael.lima@nexo.com.br` | analista N2 | console do analista |
 | `juliana.costa@nexo.com.br` | analista N1 | console (segundo analista, para testar posse da conversa) |
 
-Opcional: com o `npm run dev` rodando, `npm run seed:demo` cria três conversas de exemplo (Carla transferida, Bruno com "agent pediu ajuda", Diego resolvido pelo agent) para o console não começar vazio. As conversas de Ana e Elisa ficam livres.
+Opcional: com só o serviço de chamados no ar (`npm run dev:tickets`), `npm run seed:demo` cria três conversas de exemplo (Carla transferida, Bruno com "agent pediu ajuda", Diego resolvido pelo agent) para o console não começar vazio. As conversas de Ana e Elisa ficam livres.
 
 Outros comandos: `npm test` (43 testes), `npm run typecheck`, `npm run lint`, `npm run build && npm start` (produção), `npm run reset-data` (apaga os bancos; o seed roda de novo no próximo início).
 
@@ -66,7 +66,7 @@ Roteiros sugeridos (logado como Ana):
 - **Agent** (`src/server/agent`) é um `Agent` do **Mastra** com 9 ferramentas. Cada turno é executado por `runTurn`, que monta o histórico, roda o modelo, transmite os eventos, aplica as salvaguardas e grava a resposta com o rastro completo.
 - **Serviço de chamados** (`services/tickets`) é um processo separado, com banco e API próprios. O app só o acessa por HTTP, como faria com o sistema legado real. Ele simula instabilidade (`TICKETS_FAILURE_RATE`, padrão 10% de 503).
 - **Domínio** (`src/domain`) concentra as regras do Anexo A em funções puras, usadas pelo agent, pelo serviço e pela interface.
-- **Persistência**: SQLite nativo do Node (`node:sqlite`) — `data/app.db` (usuários, conversas, mensagens com o rastro, rascunhos, estado agent/analista) e `data/tickets.db` (chamados, central de ajuda, chaves de idempotência). Tudo sobrevive a reinício.
+- **Persistência**: Postgres — Neon em produção, PGlite (Postgres embutido) local. Dois bancos: o do app (usuários, conversas, mensagens com o rastro, rascunhos, estado agent/analista) e o do serviço de chamados (chamados, central de ajuda, chaves de idempotência). Tudo sobrevive a reinício.
 
 ## Como o agent decide
 
@@ -133,7 +133,7 @@ O que esses testes **não** medem é a qualidade das escolhas do modelo real em 
 
 ## Principais trade-offs
 
-- **SQLite nativo do Node** em vez de Postgres: zero dependência externa para rodar localmente; limita a uma instância (o que basta aqui). Os repositórios estão isolados (`AppStore`, `TicketStore`) para trocar o banco.
+- **Postgres com dois motores** (Neon em produção, PGlite local): o mesmo SQL nos dois ambientes e nenhuma instalação local; o custo é o PGlite aceitar um processo por vez e levar ~2 s para iniciar nos testes.
 - **Histórico gerenciado pelo app**, não pela memória do Mastra: o app já precisa guardar mensagens, cards e rastro para a interface e o console; mandar ao modelo uma versão resumida dá controle sobre custo.
 - **Confiança declarada pelo modelo** é uma autoavaliação, não uma probabilidade calibrada. Por isso há também salvaguardas determinísticas e o limite é configurável.
 - **Atualização por polling (3 s)** no console e no chat com analista, em vez de WebSocket: simples e robusto para o volume esperado.
@@ -146,12 +146,30 @@ O que esses testes **não** medem é a qualidade das escolhas do modelo real em 
 2. Calibrar o limite de confiança com esses dados e medir taxa de transferência e de duplicidade evitada.
 3. Notificações em tempo real (SSE/WebSocket) no console, fila com SLA de primeira resposta da transferência e atribuição automática por nível.
 4. Busca semântica na central de ajuda e feedback "isso resolveu?" para medir a resolução sem fila.
-5. Feriados e fuso por funcionário nos prazos; Postgres para várias instâncias.
+5. Feriados e fuso por funcionário nos prazos; limites de taxa em armazenamento compartilhado (hoje ficam na memória de cada instância serverless).
 6. Mascarar dados sensíveis (senhas digitadas por engano) antes de enviar ao modelo.
 
-## Deploy
+## Deploy (gratuito)
 
-O repositório tem um `Dockerfile` (um container com os dois processos) e um `render.yaml` (Render, com disco persistente em `/app/data` para os bancos SQLite). Para publicar: crie um Blueprint no Render apontando para o repositório, preencha `ANTHROPIC_API_KEY` (os segredos de sessão e do serviço são gerados pelo Render) e, se quiser o console com exemplos, rode `npm run seed:demo` no shell do serviço. No deploy, o limite diário por usuário fica em 60 turnos; como só existem os usuários de exemplo, isso também limita o custo total por dia.
+Tudo roda em planos gratuitos:
+
+| Peça | Onde | Plano |
+| --- | --- | --- |
+| App (Next.js: telas, API, agent) | Vercel, projeto `nexo-assist` | Hobby (grátis) |
+| Serviço de chamados (Hono) | Vercel, projeto `nexo-assist-tickets`, raiz `services/tickets` | Hobby (grátis) |
+| Bancos (`nexo_app` e `nexo_tickets`, separados) | Neon Postgres | Free |
+
+Por que assim: Vercel e Render gratuitos não têm disco persistente, então o SQLite de arquivo seria perdido a cada reinício. Por isso a persistência é Postgres (`src/db/sql.ts`): Neon em produção (driver HTTP, adequado a serverless) e PGlite — o mesmo Postgres, embutido — no desenvolvimento local e nos testes, sem instalar nada. O serviço de chamados continua sendo um deploy separado, com banco próprio, acessado só por HTTP com chave de serviço.
+
+Variáveis na Vercel:
+- **App**: `ANTHROPIC_API_KEY`, `SESSION_SECRET`, `DATABASE_URL` (Neon `nexo_app`), `TICKETS_URL` (URL do projeto de chamados), `TICKETS_SERVICE_KEY`, `NEXO_DAILY_TURN_LIMIT=60`.
+- **Chamados**: `TICKETS_DATABASE_URL` (Neon `nexo_tickets`), `TICKETS_SERVICE_KEY` (a mesma do app), `TICKETS_FAILURE_RATE=0.1`.
+
+Custos e abuso: o único item pago é o uso da API da Anthropic. Ele é limitado por 60 turnos do agent por usuário por dia (só existem os usuários de exemplo, então isso também limita o total diário), 20 mensagens por minuto por IP e 30 mensagens por conversa. As chaves ficam só nas variáveis de ambiente da Vercel.
+
+Conversas de exemplo em produção: `DATABASE_URL=... TICKETS_URL=https://<chamados>.vercel.app TICKETS_SERVICE_KEY=... npm run seed:demo`. Localmente, rode o seed com o app parado (o PGlite aceita um processo por vez) e o serviço de chamados no ar (`npm run dev:tickets`).
+
+O `Dockerfile` continua disponível para quem preferir um único container com disco próprio.
 
 ## Uso de IA
 
